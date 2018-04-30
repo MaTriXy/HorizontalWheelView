@@ -1,6 +1,7 @@
 package com.github.shchurov.horizontalwheelview;
 
 import android.content.Context;
+import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.os.Parcelable;
 import android.util.AttributeSet;
@@ -13,6 +14,13 @@ public class HorizontalWheelView extends View {
 
     private static final int DP_DEFAULT_WIDTH = 200;
     private static final int DP_DEFAULT_HEIGHT = 32;
+    private static final int DEFAULT_MARKS_COUNT = 40;
+    private static final int DEFAULT_NORMAL_COLOR = 0xffffffff;
+    private static final int DEFAULT_ACTIVE_COLOR = 0xff54acf0;
+    private static final boolean DEFAULT_SHOW_ACTIVE_RANGE = true;
+    private static final boolean DEFAULT_SNAP_TO_MARKS = false;
+    private static final boolean DEFAULT_END_LOCK = false;
+    private static final boolean DEFAULT_ONLY_POSITIVE_VALUES = false;
 
     public static final int SCROLL_STATE_IDLE = 0;
     public static final int SCROLL_STATE_DRAGGING = 1;
@@ -21,12 +29,34 @@ public class HorizontalWheelView extends View {
     private Drawer drawer;
     private TouchHandler touchHandler;
     private double angle;
+    private boolean onlyPositiveValues;
+    private boolean endLock;
     private Listener listener;
 
     public HorizontalWheelView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        drawer = new Drawer(this, attrs);
+        drawer = new Drawer(this);
         touchHandler = new TouchHandler(this);
+        readAttrs(attrs);
+    }
+
+    private void readAttrs(AttributeSet attrs) {
+        TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.HorizontalWheelView);
+        int marksCount = a.getInt(R.styleable.HorizontalWheelView_marksCount, DEFAULT_MARKS_COUNT);
+        drawer.setMarksCount(marksCount);
+        int normalColor = a.getColor(R.styleable.HorizontalWheelView_normalColor, DEFAULT_NORMAL_COLOR);
+        drawer.setNormalColor(normalColor);
+        int activeColor = a.getColor(R.styleable.HorizontalWheelView_activeColor, DEFAULT_ACTIVE_COLOR);
+        drawer.setActiveColor(activeColor);
+        boolean showActiveRange = a.getBoolean(R.styleable.HorizontalWheelView_showActiveRange,
+                DEFAULT_SHOW_ACTIVE_RANGE);
+        drawer.setShowActiveRange(showActiveRange);
+        boolean snapToMarks = a.getBoolean(R.styleable.HorizontalWheelView_snapToMarks, DEFAULT_SNAP_TO_MARKS);
+        touchHandler.setSnapToMarks(snapToMarks);
+        endLock = a.getBoolean(R.styleable.HorizontalWheelView_endLock, DEFAULT_END_LOCK);
+        onlyPositiveValues = a.getBoolean(R.styleable.HorizontalWheelView_onlyPositiveValues,
+                DEFAULT_ONLY_POSITIVE_VALUES);
+        a.recycle();
     }
 
     public void setListener(Listener listener) {
@@ -35,11 +65,37 @@ public class HorizontalWheelView extends View {
     }
 
     public void setRadiansAngle(double radians) {
-        this.angle = radians % (2 * PI);
+        if (!checkEndLock(radians)) {
+            angle = radians % (2 * PI);
+        }
+        if (onlyPositiveValues && angle < 0) {
+            angle += 2 * PI;
+        }
         invalidate();
         if (listener != null) {
             listener.onRotationChanged(this.angle);
         }
+    }
+
+    private boolean checkEndLock(double radians) {
+        if (!endLock) {
+            return false;
+        }
+        boolean hit = false;
+        if (radians >= 2 * PI) {
+            angle = Math.nextAfter(2 * PI, Double.NEGATIVE_INFINITY);
+            hit = true;
+        } else if (onlyPositiveValues && radians < 0) {
+            angle = 0;
+            hit = true;
+        } else if (radians <= -2 * PI) {
+            angle = Math.nextAfter(-2 * PI, Double.POSITIVE_INFINITY);
+            hit = true;
+        }
+        if (hit) {
+            touchHandler.cancelFling();
+        }
+        return hit;
     }
 
     public void setDegreesAngle(double degrees) {
@@ -62,6 +118,38 @@ public class HorizontalWheelView extends View {
 
     public double getCompleteTurnFraction() {
         return getRadiansAngle() / (2 * PI);
+    }
+
+    public void setOnlyPositiveValues(boolean onlyPositiveValues) {
+        this.onlyPositiveValues = onlyPositiveValues;
+    }
+
+    public void setEndLock(boolean lock) {
+        this.endLock = lock;
+    }
+
+    public void setMarksCount(int marksCount) {
+        drawer.setMarksCount(marksCount);
+        invalidate();
+    }
+
+    public void setShowActiveRange(boolean show) {
+        drawer.setShowActiveRange(show);
+        invalidate();
+    }
+
+    public void setNormaColor(int color) {
+        drawer.setNormalColor(color);
+        invalidate();
+    }
+
+    public void setActiveColor(int color) {
+        drawer.setActiveColor(color);
+        invalidate();
+    }
+
+    public void setSnapToMarks(boolean snapToMarks) {
+        touchHandler.setSnapToMarks(snapToMarks);
     }
 
     @Override
@@ -112,6 +200,10 @@ public class HorizontalWheelView extends View {
         super.onRestoreInstanceState(ss.getSuperState());
         angle = ss.angle;
         invalidate();
+    }
+
+    int getMarksCount() {
+        return drawer.getMarksCount();
     }
 
     public static class Listener {
